@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.db import models
 from django.db.models import UniqueConstraint
+afrom rest_framework.exceptions import ValidationError
 
 
 class Genre(models.Model):
@@ -84,3 +85,29 @@ class Ticket(models.Model):
 
     def __str__(self):
         return f"Ticket {self.id} for seat {self.row}-{self.seat}"
+
+    @staticmethod
+    def validate_ticket(row: int, seat: int, cinema_hall, error_to_raise):
+        if not (1 <= row <= cinema_hall.rows):
+            raise error_to_raise(
+                {"row": f"Row number must be in range 1 to {cinema_hall.rows}."}
+            )
+
+        if not (1 <= seat <= cinema_hall.seats_in_row):
+            raise error_to_raise(
+                {
+                    "seat": f"Seat number must be in range 1 to {cinema_hall.seats_in_row}."
+                }
+            )
+
+    def clean(self):
+        Ticket.validate_ticket(
+            self.row,
+            self.seat,
+            self.performance.theater_hall,
+            ValidationError,
+        )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
