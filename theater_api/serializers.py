@@ -1,8 +1,6 @@
-from django.contrib.auth import get_user_model
 from django.db import transaction
 from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
-from rest_framework.relations import StringRelatedField
 
 from theater_api.models import (
     Genre,
@@ -13,7 +11,6 @@ from theater_api.models import (
     Reservation,
     Ticket,
 )
-from user.serializers import UserSerializer
 
 
 class GenreSerializer(serializers.ModelSerializer):
@@ -75,10 +72,13 @@ class PerformanceListSerializer(serializers.ModelSerializer):
     theater_hall = serializers.SlugRelatedField(
         queryset=TheaterHall.objects.all(), slug_field="name"
     )
+    available_tickets = serializers.IntegerField(
+        read_only=True, source="tickets_available"
+    )
 
     class Meta:
         model = Performance
-        fields = ["id", "play", "theater_hall", "show_time"]
+        fields = ["id", "play", "theater_hall", "show_time", "available_tickets"]
 
 
 class PerformanceDetailSerializer(serializers.ModelSerializer):
@@ -110,17 +110,6 @@ class TicketSerializer(serializers.ModelSerializer):
             ValidationError,
         )
         return data
-
-
-class TicketDetailSerializer(TicketSerializer):
-    play = PlayDetailSerializer(many=False, read_only=True, source="performance.play")
-    hall = TheaterHallSerializer(
-        many=False, read_only=True, source="performance.theater_hall"
-    )
-
-    class Meta:
-        model = Ticket
-        fields = ["row", "seat", "play", "hall", "show_time"]
 
 
 class ReservationSerializer(serializers.ModelSerializer):

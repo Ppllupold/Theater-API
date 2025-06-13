@@ -1,4 +1,9 @@
+from django.http import HttpRequest
 from rest_framework import viewsets
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from rest_framework_extensions.mixins import DetailSerializerMixin
+from django.db.models import F, Count, IntegerField, ExpressionWrapper, Q
 
 from theater_api.models import (
     Genre,
@@ -6,8 +11,7 @@ from theater_api.models import (
     Play,
     TheaterHall,
     Performance,
-    Reservation,
-
+    Reservation, Ticket,
 )
 from theater_api.serializers import (
     GenreSerializer,
@@ -27,7 +31,7 @@ class GenreViewSet(viewsets.ModelViewSet):
 
 
 class ActorViewSet(viewsets.ModelViewSet):
-    queryset = Actor.objects.all()
+    queryset = Actor.objects.all().order_by("first_name")
     serializer_class = ActorSerializer
 
 
@@ -36,22 +40,58 @@ class TheaterHallViewSet(viewsets.ModelViewSet):
     serializer_class = TheaterHallSerializer
 
 
-class PlayViewSet(viewsets.ModelViewSet):
+class PlayViewSet(DetailSerializerMixin, viewsets.ModelViewSet):
     queryset = Play.objects.prefetch_related("genres", "actors")
+    serializer_detail_class = PlayDetailSerializer
+    serializer_class = PlayListSerializer
 
-    def get_serializer_class(self):
-        if self.action == "retrieve":
-            return PlayDetailSerializer
-        return PlayListSerializer
+    def get_queryset(self):
+        genres = self.request.query_params.get("genres", None)
+        if genres:
+            genres = [g.strip() for g in genres.split(",") if g.strip()]
+            for genre in genres:
+                self.queryset = self.queryset.filter(genres__name__iexact=genre)
+        return self.queryset
 
 
-class PerformanceViewSet(viewsets.ModelViewSet):
-    queryset = Performance.objects.select_related("play", "theater_hall")
+class PerformanceViewSet(viewsets.ModelViewSet, DetailSerializerMixin):
+    queryset = Performance.objects.select_related("play", "theater_hall").prefetch_related("tickets")
+    serializer_class = PerformanceListSerializer
+    serializer_detail_class = PerformanceDetailSerializer
 
-    def get_serializer_class(self):
-        if self.action == "retrieve":
-            return PerformanceDetailSerializer
-        return PerformanceListSerializer
+    @action(detail=True, methods=["get"], url_path="available-tickets")
+    def available_tickets(self, request, pk=None):
+        performance = self.get_object()
+        hall = performance.theater_hall
+        row_filter = request.query_params.get("row")
+
+        try:
+            row_filter = int(row_filter) if row_filter else None
+        except ValueError:
+            return Response({"error": "Row must be an integer."}, status=400)
+
+        if row_filter:
+            if not (1 <= row_filter <= hall.rows):
+                return Response({"error": f"Row must be in range 1 to {hall.rows}."}, status=400)
+            rows = [row_filter]
+        else:
+            rows = range(1, hall.rows + 1)
+
+        all_seats = [
+            {"row": row, "seat": seat}
+            for row in rows
+            for seat in range(1, hall.seats_in_row + 1)
+        ]
+
+        booked = set(
+            Ticket.objects
+            .filter(performance=performance)
+            .values_list("row", "seat")
+        )
+
+        available = [seat for seat in all_seats if (seat["row"], seat["seat"]) not in booked]
+
+        return Response(available)
 
 
 class ReservationViewSet(viewsets.ModelViewSet):
