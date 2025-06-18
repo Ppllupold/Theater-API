@@ -1,7 +1,8 @@
 from datetime import timedelta
 
-from django.db.models import Count, Q
+from django.db.models import Count, Q, F
 from django.utils import timezone
+from drf_spectacular.utils import extend_schema, OpenApiParameter
 
 from rest_framework import viewsets
 from rest_framework.decorators import action
@@ -57,6 +58,16 @@ class PlayViewSet(DetailSerializerMixin, viewsets.ModelViewSet):
                 self.queryset = self.queryset.filter(genres__name__iexact=genre)
         return self.queryset
 
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name="genres",
+                type=str,
+                location="query",
+                description="comma separated genre names. Result includes instances that necessarily have all the genres from request",
+            ),
+        ]
+    )
     def list(self, request, *args, **kwargs):
         response = super().list(request, *args, **kwargs)
         response.data = {
