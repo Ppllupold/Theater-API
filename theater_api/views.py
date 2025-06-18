@@ -1,9 +1,12 @@
-from django.http import HttpRequest
+from datetime import timedelta
+
+from django.db.models import Count, Q
+from django.utils import timezone
+
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework_extensions.mixins import DetailSerializerMixin
-from django.db.models import F, Count, IntegerField, ExpressionWrapper, Q
 
 from theater_api.models import (
     Genre,
@@ -11,7 +14,8 @@ from theater_api.models import (
     Play,
     TheaterHall,
     Performance,
-    Reservation, Ticket,
+    Reservation,
+    Ticket,
 )
 from theater_api.serializers import (
     GenreSerializer,
@@ -53,9 +57,34 @@ class PlayViewSet(DetailSerializerMixin, viewsets.ModelViewSet):
                 self.queryset = self.queryset.filter(genres__name__iexact=genre)
         return self.queryset
 
+    def list(self, request, *args, **kwargs):
+        response = super().list(request, *args, **kwargs)
+        response.data = {
+            "week_most_popular": self.get_week_most_popular_name(),
+            "results": response.data,
+        }
+        return response
+
+    @staticmethod
+    def get_week_most_popular_name() -> dict:
+        seven_days_ago = timezone.now() - timedelta(days=7)
+        return (
+            Play.objects.annotate(
+                last_week_tickets=Count(
+                    "performances__tickets",
+                    filter=Q(performances__show_time__gte=seven_days_ago),
+                )
+            )
+            .order_by("-last_week_tickets")
+            .values("id", "title")
+            .first()
+        )
+
 
 class PerformanceViewSet(viewsets.ModelViewSet, DetailSerializerMixin):
-    queryset = Performance.objects.select_related("play", "theater_hall").prefetch_related("tickets")
+    queryset = Performance.objects.select_related(
+        "play", "theater_hall"
+    ).prefetch_related("tickets")
     serializer_class = PerformanceListSerializer
     serializer_detail_class = PerformanceDetailSerializer
 
@@ -72,7 +101,9 @@ class PerformanceViewSet(viewsets.ModelViewSet, DetailSerializerMixin):
 
         if row_filter:
             if not (1 <= row_filter <= hall.rows):
-                return Response({"error": f"Row must be in range 1 to {hall.rows}."}, status=400)
+                return Response(
+                    {"error": f"Row must be in range 1 to {hall.rows}."}, status=400
+                )
             rows = [row_filter]
         else:
             rows = range(1, hall.rows + 1)
@@ -84,12 +115,12 @@ class PerformanceViewSet(viewsets.ModelViewSet, DetailSerializerMixin):
         ]
 
         booked = set(
-            Ticket.objects
-            .filter(performance=performance)
-            .values_list("row", "seat")
+            Ticket.objects.filter(performance=performance).values_list("row", "seat")
         )
 
-        available = [seat for seat in all_seats if (seat["row"], seat["seat"]) not in booked]
+        available = [
+            seat for seat in all_seats if (seat["row"], seat["seat"]) not in booked
+        ]
 
         return Response(available)
 
