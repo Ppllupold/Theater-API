@@ -6,6 +6,7 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter
 
 from rest_framework import viewsets
 from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticatedOrReadOnly, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_extensions.mixins import DetailSerializerMixin
 
@@ -18,6 +19,7 @@ from theater_api.models import (
     Reservation,
     Ticket,
 )
+from theater_api.permissions import IsAdminAllOrReadOnly
 from theater_api.serializers import (
     GenreSerializer,
     ActorSerializer,
@@ -33,22 +35,26 @@ from theater_api.serializers import (
 class GenreViewSet(viewsets.ModelViewSet):
     queryset = Genre.objects.all()
     serializer_class = GenreSerializer
+    permission_classes = (IsAuthenticated, IsAdminAllOrReadOnly)
 
 
 class ActorViewSet(viewsets.ModelViewSet):
     queryset = Actor.objects.all().order_by("first_name")
     serializer_class = ActorSerializer
+    permission_classes = (IsAuthenticated, IsAdminAllOrReadOnly)
 
 
 class TheaterHallViewSet(viewsets.ModelViewSet):
     queryset = TheaterHall.objects.all()
     serializer_class = TheaterHallSerializer
+    permission_classes = (IsAuthenticated, IsAdminAllOrReadOnly)
 
 
 class PlayViewSet(DetailSerializerMixin, viewsets.ModelViewSet):
     queryset = Play.objects.prefetch_related("genres", "actors")
     serializer_detail_class = PlayDetailSerializer
     serializer_class = PlayListSerializer
+    permission_classes = (IsAuthenticated, IsAdminAllOrReadOnly)
 
     def get_queryset(self):
         genres = self.request.query_params.get("genres", None)
@@ -98,8 +104,14 @@ class PerformanceViewSet(viewsets.ModelViewSet, DetailSerializerMixin):
     ).prefetch_related("tickets")
     serializer_class = PerformanceListSerializer
     serializer_detail_class = PerformanceDetailSerializer
+    permission_classes = (IsAuthenticated, IsAdminAllOrReadOnly)
 
-    @action(detail=True, methods=["get"], url_path="available-tickets")
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path="available-tickets",
+        permission_classes=(IsAuthenticated,),
+    )
     def available_tickets(self, request, pk=None):
         performance = self.get_object()
         hall = performance.theater_hall
@@ -139,6 +151,7 @@ class PerformanceViewSet(viewsets.ModelViewSet, DetailSerializerMixin):
 class ReservationViewSet(viewsets.ModelViewSet):
     queryset = Reservation.objects.select_related("user")
     serializer_class = ReservationSerializer
+    permission_classes = (IsAuthenticated,)
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
