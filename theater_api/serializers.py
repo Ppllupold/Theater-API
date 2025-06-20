@@ -96,17 +96,23 @@ class TicketSerializer(serializers.ModelSerializer):
     show_time = serializers.DateTimeField(
         source="performance.show_time", format="%Y-%m-%d %H:%M", read_only=True
     )
+    performance = serializers.PrimaryKeyRelatedField(queryset=Performance.objects.all())
 
     class Meta:
         model = Ticket
-        fields = ["row", "seat", "play", "hall", "show_time"]
+        fields = ["row", "seat", "performance", "play", "hall", "show_time"]
 
     def validate(self, attrs):
-        data = super(TicketSerializer, self).validate(attrs=attrs)
+        data = super().validate(attrs)
+        performance = attrs.get("performance")
+
+        if not performance:
+            raise ValidationError({"performance": "This field is required."})
+
         Ticket.validate_ticket(
             attrs["row"],
             attrs["seat"],
-            attrs["performance"].theater_hall,
+            performance.theater_hall,
             ValidationError,
         )
         return data
